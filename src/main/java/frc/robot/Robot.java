@@ -4,9 +4,16 @@
 
 package frc.robot;
 
+import com.ctre.phoenix6.SignalLogger;
+import edu.wpi.first.wpilibj.DataLogManager;
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.util.WPILibVersion;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import frc.robot.util.LogUtil;
 
 /**
  * The methods in this class are called automatically corresponding to each mode, as described in
@@ -23,6 +30,36 @@ public class Robot extends TimedRobot {
    * initialization code.
    */
   public Robot() {
+    DataLogManager.start();
+    DriverStation.startDataLog(DataLogManager.getLog());
+
+    SignalLogger.start();
+
+    LogUtil.recordMetadata("Java Vendor", System.getProperty("java.vendor"));
+    LogUtil.recordMetadata("Java Version", System.getProperty("java.version"));
+    LogUtil.recordMetadata("WPILib Version", WPILibVersion.Version);
+
+    LogUtil.recordMetadata("Runtime Type", getRuntimeType().toString());
+
+    // Git and build information
+    LogUtil.recordMetadata("Project Name", BuildConstants.MAVEN_NAME);
+    LogUtil.recordMetadata("Build Date", BuildConstants.BUILD_DATE);
+    LogUtil.recordMetadata("Git SHA", BuildConstants.GIT_SHA);
+    LogUtil.recordMetadata("Git Date", BuildConstants.GIT_DATE);
+    LogUtil.recordMetadata("Git Revision", BuildConstants.GIT_REVISION);
+    LogUtil.recordMetadata("Git Branch", BuildConstants.GIT_BRANCH);
+    switch (BuildConstants.DIRTY) {
+      case 0:
+        LogUtil.recordMetadata("Git Dirty", "All changes committed");
+        break;
+      case 1:
+        LogUtil.recordMetadata("Git Dirty", "Uncommitted changes");
+        break;
+      default:
+        LogUtil.recordMetadata("Git Dirty", "Unknown");
+        break;
+    }
+
     // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
     // autonomous chooser on the dashboard.
     m_robotContainer = new RobotContainer();
@@ -42,6 +79,13 @@ public class Robot extends TimedRobot {
     // and running subsystem periodic() methods.  This must be called from the robot's periodic
     // block in order for anything in the Command-based framework to work.
     CommandScheduler.getInstance().run();
+
+    SmartDashboard.putNumber("RoboRIO/CPU Temperature", RobotController.getCPUTemp());
+    SmartDashboard.putBoolean("RoboRIO/RSL", RobotController.getRSLState());
+    SmartDashboard.putNumber("RoboRIO/Input Current", RobotController.getInputCurrent());
+
+    SmartDashboard.putNumber("Voltage", RobotController.getBatteryVoltage());
+    SmartDashboard.putNumber("Match Time", DriverStation.getMatchTime());
   }
 
   /** This function is called once each time the robot enters Disabled mode. */
