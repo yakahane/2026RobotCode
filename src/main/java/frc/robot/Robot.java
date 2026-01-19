@@ -6,6 +6,8 @@ package frc.robot;
 
 import com.ctre.phoenix6.SignalLogger;
 import com.pathplanner.lib.commands.PathfindingCommand;
+import edu.wpi.first.epilogue.Epilogue;
+import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.wpilibj.DataLogManager;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotController;
@@ -17,6 +19,9 @@ import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import frc.robot.util.AllianceUtil;
 import frc.robot.util.LogUtil;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
+import java.util.List;
 
 /**
  * The methods in this class are called automatically corresponding to each mode, as described in
@@ -26,7 +31,10 @@ import frc.robot.util.LogUtil;
 public class Robot extends TimedRobot {
   private Command m_autonomousCommand;
 
+  @Logged(name = "Robot")
   private final RobotContainer m_robotContainer;
+
+  private final GcStatsCollector gcStatsCollector = new GcStatsCollector();
 
   /**
    * This function is run when the robot is first started up and should be used for any
@@ -35,6 +43,13 @@ public class Robot extends TimedRobot {
   public Robot() {
     DataLogManager.start();
     DriverStation.startDataLog(DataLogManager.getLog());
+
+    Epilogue.configure(
+        (config) -> {
+          config.root = "";
+          config.backend = config.backend.lazy();
+        });
+    Epilogue.bind(this);
 
     SignalLogger.start();
 
@@ -67,7 +82,8 @@ public class Robot extends TimedRobot {
     // autonomous chooser on the dashboard.
     m_robotContainer = new RobotContainer();
 
-    PathfindingCommand.warmupCommand().withName("Pathfinding Warmup").schedule();
+    CommandScheduler.getInstance()
+        .schedule(PathfindingCommand.warmupCommand().withName("Pathfinding Warmup"));
   }
 
   /**
@@ -86,6 +102,8 @@ public class Robot extends TimedRobot {
     // and running subsystem periodic() methods.  This must be called from the robot's periodic
     // block in order for anything in the Command-based framework to work.
     CommandScheduler.getInstance().run();
+
+    gcStatsCollector.update();
 
     SmartDashboard.putNumber("RoboRIO/CPU Temperature", RobotController.getCPUTemp());
     SmartDashboard.putBoolean("RoboRIO/RSL", RobotController.getRSLState());
@@ -154,4 +172,27 @@ public class Robot extends TimedRobot {
   /** This function is called periodically whilst in simulation. */
   @Override
   public void simulationPeriodic() {}
+
+  private static final class GcStatsCollector {
+    private List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+    private final long[] lastTimes = new long[gcBeans.size()];
+    private final long[] lastCounts = new long[gcBeans.size()];
+
+    public void update() {
+      long accumTime = 0;
+      long accumCounts = 0;
+      for (int i = 0; i < gcBeans.size(); i++) {
+        long gcTime = gcBeans.get(i).getCollectionTime();
+        long gcCount = gcBeans.get(i).getCollectionCount();
+        accumTime += gcTime - lastTimes[i];
+        accumCounts += gcCount - lastCounts[i];
+
+        lastTimes[i] = gcTime;
+        lastCounts[i] = gcCount;
+      }
+
+      SmartDashboard.putNumber("GC Stats/GC Time MS", (double) accumTime);
+      SmartDashboard.putNumber("GC Stats/GC Counts", (double) accumCounts);
+    }
+  }
 }

@@ -5,6 +5,7 @@
 package frc.robot.subsystems;
 
 import static edu.wpi.first.units.Units.Degrees;
+import static edu.wpi.first.units.Units.Radians;
 import static edu.wpi.first.units.Units.Rotations;
 
 import com.ctre.phoenix6.StatusSignal;
@@ -14,6 +15,7 @@ import com.ctre.phoenix6.controls.MotionMagicVoltage;
 import com.ctre.phoenix6.hardware.CANcoder;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.SensorDirectionValue;
+import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -24,15 +26,9 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.Constants.TurretConstants;
-import frc.robot.util.AllianceUtil;
 import java.util.function.Supplier;
 
 public class Turret extends SubsystemBase {
-  /** Creates a new twoEncoderTurret. */
-
-  // private final Field2d m_field = new Field2d();
-  private final Pose2d towerPose = AllianceUtil.getHubPose();
-
   private final double motorGearTeeth = 30.0;
   private final double secondaryGearTeeth = 32.0;
   private final double turretGearTeeth = 210.0;
@@ -93,7 +89,6 @@ public class Turret extends SubsystemBase {
   // }
 
   public Command faceTarget(Supplier<Pose2d> targetSupplier, Supplier<Pose2d> robotPoseSupplier) {
-
     return run(() -> {
           Pose2d target = targetSupplier.get();
           Pose2d robotPose = robotPoseSupplier.get();
@@ -114,8 +109,8 @@ public class Turret extends SubsystemBase {
         .withName("Turret Face Target");
   }
 
-  private Angle getAbsoluteTurretPosition() {
-
+  @Logged(name = "Absolute Position")
+  public Angle getAbsoluteTurretPosition() {
     double eA = encoderA.getAbsolutePosition().getValue().in(Rotations);
     double eB = encoderB.getAbsolutePosition().getValue().in(Rotations);
 
@@ -134,13 +129,11 @@ public class Turret extends SubsystemBase {
     return Degrees.of(turretRotations * 360);
   }
 
-  public void setTargetAngleDeg(Angle desiredTurretAngle) {
-
+  public void setTargetAngle(Angle desiredTurretAngle) {
     turretMotor.setControl(motionMagicRequest.withPosition(optimizeAngle(desiredTurretAngle)));
   }
 
   private Angle optimizeAngle(Angle desiredAngle) {
-    // double current = getAbsoluteTurretPosition().in(Degrees);
     double current = turretPosition.getValue().in(Degrees);
 
     double desiredDeg = desiredAngle.in(Degrees);
@@ -151,13 +144,17 @@ public class Turret extends SubsystemBase {
 
     double candidate = current + delta;
 
-    if (candidate > TurretConstants.MAX_DEGREES) {
+    if (candidate > TurretConstants.MAX_ANGLE.in(Degrees)) {
       candidate -= 360;
-    } else if (candidate < TurretConstants.MIN_DEGREES) {
+    } else if (candidate < TurretConstants.MIN_ANGLE.in(Degrees)) {
       candidate += 360;
     }
 
-    candidate = MathUtil.clamp(candidate, TurretConstants.MIN_DEGREES, TurretConstants.MAX_DEGREES);
+    candidate =
+        MathUtil.clamp(
+            candidate,
+            TurretConstants.MIN_ANGLE.in(Degrees),
+            TurretConstants.MAX_ANGLE.in(Degrees));
 
     return Degrees.of(candidate);
   }
@@ -170,20 +167,19 @@ public class Turret extends SubsystemBase {
     return runOnce(() -> turretMotor.stopMotor()).withName("Stop Turret");
   }
 
-  public boolean hasDriftedTooMuch(double toleranceDeg) {
-    double motorAngleRad = Units.degreesToRadians(turretPosition.getValueAsDouble() * 360);
-    double absAngleRad =
-        Units.degreesToRadians(encoderA.getAbsolutePosition().getValueAsDouble() * 360);
+  public boolean hasDriftedTooMuch(Angle tolerance) {
+    Angle motorAngle = turretPosition.getValue();
+    Angle absAngle = encoderA.getAbsolutePosition().getValue();
 
-    double errorRad = MathUtil.angleModulus(motorAngleRad - absAngleRad);
-    return Math.abs(Units.radiansToDegrees(errorRad)) > toleranceDeg;
+    double errorRad = MathUtil.angleModulus(motorAngle.in(Radians) - absAngle.in(Radians));
+    return Math.abs(Units.radiansToDegrees(errorRad)) > tolerance.in(Degrees);
   }
 
   @Override
   public void periodic() {
     turretPosition.refresh();
     SmartDashboard.putNumber("TwoEncoder Angle", getAbsoluteTurretPosition().in(Degrees));
-    SmartDashboard.putNumber("Turret Angle", turretPosition.getValueAsDouble());
-    SmartDashboard.putBoolean("Drifted too much", hasDriftedTooMuch(5));
+    SmartDashboard.putNumber("Turret Angle", turretPosition.getValue().in(Degrees));
+    SmartDashboard.putBoolean("Drifted too much", hasDriftedTooMuch(Degrees.of(5)));
   }
 }

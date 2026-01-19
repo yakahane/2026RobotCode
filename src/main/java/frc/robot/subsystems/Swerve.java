@@ -22,6 +22,7 @@ import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform2d;
 import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
@@ -31,7 +32,6 @@ import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.Notifier;
 import edu.wpi.first.wpilibj.RobotController;
-import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -94,22 +94,13 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
   private PhotonCamera arducamRight = new PhotonCamera(VisionConstants.arducamRightName);
 
   private PhotonPoseEstimator leftPoseEstimator =
-      new PhotonPoseEstimator(
-          FieldConstants.aprilTagLayout,
-          PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR,
-          VisionConstants.arducamLeftTransform);
+      new PhotonPoseEstimator(FieldConstants.aprilTagLayout, VisionConstants.arducamLeftTransform);
 
   private PhotonPoseEstimator rightPoseEstimator =
-      new PhotonPoseEstimator(
-          FieldConstants.aprilTagLayout,
-          PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR,
-          VisionConstants.arducamRightTransform);
+      new PhotonPoseEstimator(FieldConstants.aprilTagLayout, VisionConstants.arducamRightTransform);
 
   private PhotonPoseEstimator frontPoseEstimator =
-      new PhotonPoseEstimator(
-          FieldConstants.aprilTagLayout,
-          PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR,
-          VisionConstants.arducamFrontTransform);
+      new PhotonPoseEstimator(FieldConstants.aprilTagLayout, VisionConstants.arducamFrontTransform);
 
   private List<PhotonPipelineResult> latestArducamLeftResult;
   private List<PhotonPipelineResult> latestArducamRightResult;
@@ -141,6 +132,12 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
   private List<Pose3d> rejectedPoses = new ArrayList<>();
 
   private List<PoseEstimate> poseEstimates = new ArrayList<>();
+
+  // Never called, only used to allow logging the poses being used
+  @Logged(name = "Accepted Poses")
+  public List<Pose3d> acceptedPosesList() {
+    return poseEstimates.stream().map((p) -> p.estimatedPose()).toList();
+  }
 
   /* Blue alliance sees forward as 0 degrees (toward red alliance wall) */
   private static final Rotation2d kBlueAlliancePerspectiveRotation = Rotation2d.kZero;
@@ -205,9 +202,6 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
               },
               null,
               this));
-
-  /* The SysId routine to test */
-  private SysIdRoutine m_sysIdRoutineToApply = m_sysIdRoutineTranslation;
 
   /**
    * Constructs a CTRE SwerveDrivetrain using the specified constants.
@@ -292,48 +286,39 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
     return run(() -> this.setControl(request.get()));
   }
 
-  /**
-   * Runs the SysId Quasistatic test in the given direction for the routine specified by {@link
-   * #m_sysIdRoutineToApply}.
-   *
-   * @param direction Direction of the SysId Quasistatic test
-   * @return Command to run
-   */
-  public Command sysIdQuasistatic(SysIdRoutine.Direction direction) {
-    return m_sysIdRoutineToApply.quasistatic(direction);
+  public Command sysIdQuasistaticRotation(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineRotation.quasistatic(direction);
   }
 
-  /**
-   * Runs the SysId Dynamic test in the given direction for the routine specified by {@link
-   * #m_sysIdRoutineToApply}.
-   *
-   * @param direction Direction of the SysId Dynamic test
-   * @return Command to run
-   */
-  public Command sysIdDynamic(SysIdRoutine.Direction direction) {
-    return m_sysIdRoutineToApply.dynamic(direction);
+  public Command sysIdDynamicRotation(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineRotation.dynamic(direction);
   }
 
-  double ctreToFpgaTime(double timestamp) {
-    return (Timer.getFPGATimestamp() - Utils.getCurrentTimeSeconds()) + timestamp;
+  public Command sysIdQuasistaticTranslation(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineTranslation.quasistatic(direction);
+  }
+
+  public Command sysIdDynamicTranslation(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineTranslation.dynamic(direction);
+  }
+
+  public Command sysIdQuasistaticSteer(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineSteer.quasistatic(direction);
+  }
+
+  public Command sysIdDynamicSteer(SysIdRoutine.Direction direction) {
+    return m_sysIdRoutineSteer.dynamic(direction);
   }
 
   @Override
   public void periodic() {
-
     stateCache = getState();
 
-    SmartDashboard.putNumberArray(
-        "Swerve/Robot Pose",
-        new double[] {
-          stateCache.Pose.getX(), stateCache.Pose.getY(), stateCache.Pose.getRotation().getDegrees()
-        });
-    SmartDashboard.putNumber("Swerve/PigeonAngle", getPigeonRotation().getDegrees());
     latestArducamLeftResult = arducamLeft.getAllUnreadResults();
     latestArducamRightResult = arducamRight.getAllUnreadResults();
     latestArducamFrontResult = arducamFront.getAllUnreadResults();
 
-    double stateTimestamp = ctreToFpgaTime(stateCache.Timestamp);
+    double stateTimestamp = Utils.currentTimeToFPGATime(stateCache.Timestamp);
 
     leftPoseEstimator.addHeadingData(stateTimestamp, stateCache.Pose.getRotation());
     rightPoseEstimator.addHeadingData(stateTimestamp, stateCache.Pose.getRotation());
@@ -473,6 +458,10 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
       Optional<EstimatedRobotPose> optionalVisionPose =
           poseEstimator.estimateCoprocMultiTagPose(result);
       if (optionalVisionPose.isEmpty()) {
+        optionalVisionPose = poseEstimator.estimatePnpDistanceTrigSolvePose(result);
+        continue;
+      }
+      if (optionalVisionPose.isEmpty()) {
         continue;
       }
 
@@ -570,7 +559,7 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
     for (PoseEstimate poseEstimate : poseEstimates) {
       addVisionMeasurement(
           poseEstimate.estimatedPose().toPose2d(),
-          Utils.currentTimeToFPGATime(poseEstimate.timestamp()),
+          poseEstimate.timestamp(),
           poseEstimate.visionStandardDeviation());
     }
   }
@@ -622,7 +611,7 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
     }
 
     Optional<Rotation2d> rotationAtTime =
-        samplePoseAt(Utils.fpgaToCurrentTime(timestampSeconds)).map((pose) -> pose.getRotation());
+        samplePoseAt(timestampSeconds).map((pose) -> pose.getRotation());
 
     if (rotationAtTime.isEmpty()) {
       return false;
@@ -680,9 +669,12 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
             .setLatencyStdDevMs(15)
             .setExposureTimeMs(45);
 
-    arducamLeftSim = new PhotonCameraSim(arducamLeft, arducamProperties);
-    arducamRightSim = new PhotonCameraSim(arducamRight, arducamProperties);
-    arducamFrontSim = new PhotonCameraSim(arducamFront, arducamProperties);
+    arducamLeftSim =
+        new PhotonCameraSim(arducamLeft, arducamProperties, FieldConstants.aprilTagLayout);
+    arducamRightSim =
+        new PhotonCameraSim(arducamRight, arducamProperties, FieldConstants.aprilTagLayout);
+    arducamFrontSim =
+        new PhotonCameraSim(arducamFront, arducamProperties, FieldConstants.aprilTagLayout);
 
     visionSim.addCamera(arducamLeftSim, VisionConstants.arducamLeftTransform);
     visionSim.addCamera(arducamRightSim, VisionConstants.arducamRightTransform);
@@ -754,7 +746,18 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
     return stateCache.Pose;
   }
 
-  public Rotation2d getPigeonRotation() {
+  @Logged(name = "Rotation")
+  public Rotation2d getRotation() {
     return getPigeon2().getRotation2d();
+  }
+
+  @Logged(name = "Module States")
+  public SwerveModuleState[] getModuleStates() {
+    return stateCache.ModuleStates;
+  }
+
+  @Logged(name = "Desired States")
+  public SwerveModuleState[] getDesiredStates() {
+    return stateCache.ModuleTargets;
   }
 }
