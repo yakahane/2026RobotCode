@@ -1,5 +1,5 @@
 {
- "name":"MidRBumper_To_BallPoseR",
+ "name":"NewPath",
  "version":3,
  "snapshot":{
   "waypoints":[],
@@ -8,8 +8,8 @@
  },
  "params":{
   "waypoints":[
-    {"x":{"exp":"MidRBumper.x", "val":5.600369930267334}, "y":{"exp":"MidRBumper.y", "val":2.43641996383667}, "heading":{"exp":"MidRBumper.heading", "val":0.0}, "intervals":19, "split":false, "fixTranslation":true, "fixHeading":true, "overrideIntervals":false},
-    {"x":{"exp":"MidBallPoseR.x", "val":7.529880046844482}, "y":{"exp":"MidBallPoseR.y", "val":2.1440699100494385}, "heading":{"exp":"MidBallPoseR.heading", "val":0.0}, "intervals":40, "split":false, "fixTranslation":true, "fixHeading":true, "overrideIntervals":false}],
+    {"x":{"exp":"AllianceRBumper.x", "val":3.5734095573425293}, "y":{"exp":"AllianceRBumper.y", "val":2.43641996383667}, "heading":{"exp":"AllianceRBumper.heading", "val":0.0}, "intervals":40, "split":false, "fixTranslation":true, "fixHeading":true, "overrideIntervals":false},
+    {"x":{"exp":"3.729329824447632 m", "val":3.729329824447632}, "y":{"exp":"2.436419725418091 m", "val":2.436419725418091}, "heading":{"exp":"0 deg", "val":0.0}, "intervals":40, "split":false, "fixTranslation":true, "fixHeading":true, "overrideIntervals":false}],
   "constraints":[
     {"from":"first", "to":null, "data":{"type":"StopPoint", "props":{}}, "enabled":true},
     {"from":"last", "to":null, "data":{"type":"StopPoint", "props":{}}, "enabled":true},
