@@ -72,6 +72,7 @@ public final class Constants {
     public static final AngularAcceleration maxAngularAcceleration =
         maxRotationalSpeed.div(rotationZeroToFull);
 
+
     public static final double headingP = 0.0;
     public static final double headingD = 0.0;
 
@@ -84,10 +85,11 @@ public final class Constants {
   }
 
   public static class intakeConstants {
-    public static final int armID = 1;
-    public static final int wheelID = 2;
-    public static final int beamID = 3;
-    public static final int joystickID = 4;
+    public static final int armID = 15;
+    public static final int wheelID = 16;
+    public static final int beamID = 17;
+    public static final int joystickID = 18;
+
     public static final double voltagePreset = 0;
     /*Gear value TBD || All values random */
     public static final double gearRatio = 5.0;
@@ -187,15 +189,15 @@ public final class Constants {
   public static class TurretConstants {
 
     public static final double gearOneTeeth = 48;
-    public static final double gearTwoTeeth = 49;
+    public static final double gearTwoTeeth = 50;
     public static final double turretTeeth = 85;
 
     public static final Angle tolerance = Degrees.of(20);
 
     public static final double totalGearRatio = (gearOneTeeth / 10) * (turretTeeth / 10);
 
-    public static final Angle MIN_ANGLE = Degrees.of(-540.0);
-    public static final Angle MAX_ANGLE = Degrees.of(540.0);
+    public static final Angle MIN_ANGLE = Degrees.of(-360.0);
+    public static final Angle MAX_ANGLE = Degrees.of(360.0);
 
     public static final MotionMagicConfigs motionMagicConfigs =
         new MotionMagicConfigs()
@@ -204,11 +206,11 @@ public final class Constants {
 
     public static final Slot0Configs slot0Configs =
         new Slot0Configs()
-            .withKS(0.254)
-            .withKV(2.353)
-            .withKA(0.00)
+            .withKS(0.3)
+            .withKV(0.67)
+            .withKA(0.2)
             .withKG(0.00)
-            .withKP(50)
+            .withKP(35.3)
             .withKI(0.00)
             .withKD(0.00)
             .withStaticFeedforwardSign(StaticFeedforwardSignValue.UseVelocitySign);
@@ -244,15 +246,14 @@ public final class Constants {
     public static final Translation3d robotToTurret =
         new Translation3d(-0.26, .26, Units.inchesToMeters(10.826));
 
-    public static final int turretMotorID = 10;
-    public static final int encoderAID = 11;
-    public static final int encoderBID = 12;
+    public static final int turretMotorID = 19;
+    public static final int encoderAID = 20;
+    public static final int encoderBID = 21;
   }
 
   public static class AutoConstants {
     public static final PIDConstants translationPID = new PIDConstants(2, 0.0, 0.1); // 5 2.2
     public static final PIDConstants rotationPID = new PIDConstants(1.4, 0.0, 0.1); // 1  2.8
-
     public static final PathConstraints pathConstraints =
         new PathConstraints(
             SwerveConstants.maxTranslationalSpeed,
@@ -262,7 +263,7 @@ public final class Constants {
   }
 
   public static class HoodConstants {
-    public static final int hoodMotorID = 8;
+    public static final int hoodMotorID = 22;
 
     private static final double hoodGearRatio = 100.0;
 
@@ -326,8 +327,8 @@ public final class Constants {
 
   public static class SpindexerConstants {
 
-    public static final int SpindexerMotorID = 0;
-    public static final int SpindexerLaserID = 0;
+    public static final int SpindexerMotorID = 23;
+    public static final int SpindexerLaserID = 24;
     public static final double SpindexerMotorSpeed = 0.5;
     public static final double SpindexerDistance = 100;
   }

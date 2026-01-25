@@ -10,9 +10,10 @@ import edu.wpi.first.wpilibj2.command.SubsystemBase;
 
 public class Shooter extends SubsystemBase {
   /** Creates a new Shooter. */
-  TalonFX shooterMotor = new TalonFX(67);
+  private TalonFX shooterMotor = new TalonFX(75);
 
-  public double speed;
+  private double speed;
+
   private final MotionMagicVelocityVoltage shooterVelocity = new MotionMagicVelocityVoltage(0);
 
   public Shooter() {

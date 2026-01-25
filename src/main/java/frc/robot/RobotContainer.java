@@ -115,6 +115,8 @@ public class RobotContainer {
             swerve));
 
     driverController.a().whileTrue(swerve.pathFindThroughTrench());
+
+    turret.setDefaultCommand(turret.faceTarget(AllianceUtil::getHubPose, swerve::getRobotPose));
   }
 
   private void configureOperatorBindings() {
