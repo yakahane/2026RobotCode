@@ -36,7 +36,6 @@ import frc.robot.Constants.TurretConstants;
 import java.util.function.Supplier;
 
 public class Turret extends SubsystemBase {
-
   private final double gearOneTeeth = TurretConstants.gearOneTeeth;
   private final double gearTwoTeeth = TurretConstants.gearTwoTeeth;
   private final double turretTeeth = TurretConstants.turretTeeth;
@@ -129,7 +128,6 @@ public class Turret extends SubsystemBase {
   }
 
   public Angle angleToFaceTarget(Translation2d targetPose, Pose2d robotPose) {
-
     Pose2d turretPose =
         robotPose.transformBy(
             new Transform2d(TurretConstants.robotToTurret.toTranslation2d(), Rotation2d.kZero));

@@ -81,7 +81,6 @@ public class ShootOnTheMove extends Command {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-
     ChassisSpeeds fieldSpeeds = swerve.getFieldSpeeds();
 
     ChassisSpeeds fieldAcceleration = fieldSpeeds.minus(previousFieldSpeeds).div(0.020);
@@ -108,7 +107,6 @@ public class ShootOnTheMove extends Command {
     // if (turretSetPointDebouncer.calculate(Math.abs(turretErrorDeg) <= turretTolerance)
     //     && hoodSetPointDebouncer.calculate(Math.abs(hoodErrorDeg) <= hoodTolerance)
     //     && shooterDebouncer.calculate(shooterAtSetPoint)) {
-
     if ((Timer.getFPGATimestamp() - startTime) > 1 / SimConstants.ballsPerSecond) {
       robotVisualization.shootFuel(shootingParameters);
       startTime = Timer.getFPGATimestamp();

@@ -71,7 +71,6 @@ public class RobotVisualization {
   }
 
   public void basicShootFuel(ShootingParameters shootingParameters) {
-
     Pose3d robotPose = new Pose3d(swerve.getRobotPose());
 
     ChassisSpeeds fieldSpeeds = swerve.getFieldSpeeds();
@@ -164,7 +163,6 @@ public class RobotVisualization {
   }
 
   public void shootFuel(ShootingParameters shootingParameters) {
-
     if (fuelStored < 1) return;
 
     fuelStored--;

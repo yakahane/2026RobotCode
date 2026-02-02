@@ -17,7 +17,6 @@ import frc.robot.subsystems.Swerve;
 import frc.robot.subsystems.Turret;
 
 public class SOTMCalculator {
-
   public static InterpolatingTreeMap<Double, Rotation2d> hoodAngleMap =
       new InterpolatingTreeMap<>(InverseInterpolator.forDouble(), Rotation2d::interpolate);
   public static InterpolatingDoubleTreeMap shooterSpeedMap = new InterpolatingDoubleTreeMap();
@@ -91,7 +90,6 @@ public class SOTMCalculator {
       double fieldAccelX,
       double fieldAccelY,
       ChassisSpeeds fieldChassisSpeeds) {
-
     Pose2d targetPose = target;
 
     Pose2d robotPose = swerve.getRobotPose();

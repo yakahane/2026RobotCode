@@ -544,7 +544,6 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
       double baseSingleTagStdDev,
       double baseMultiTagStdDev,
       double cameraWeight) {
-
     if (latestResults.isEmpty()) {
       return;
     }

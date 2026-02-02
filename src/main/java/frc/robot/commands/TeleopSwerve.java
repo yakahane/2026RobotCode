@@ -49,7 +49,6 @@ public class TeleopSwerve extends Command {
       DoubleSupplier rotationSupplier,
       Supplier<LinearVelocity> maxTranslationalSpeed,
       Swerve swerve) {
-
     this.forwardSupplier = forwardSupplier;
     this.strafeSupplier = strafeSupplier;
     this.rotationSupplier = rotationSupplier;

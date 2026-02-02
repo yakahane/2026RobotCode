@@ -195,7 +195,6 @@ public final class Constants {
   }
 
   public static class TurretConstants {
-
     public static final double gearOneTeeth = 48;
     public static final double gearTwoTeeth = 50;
     public static final double turretTeeth = 85;
@@ -325,7 +324,6 @@ public final class Constants {
   }
 
   public static class SpindexerConstants {
-
     public static final int SpindexerMotorID = 23;
     public static final int SpindexerLaserID = 24;
     public static final double SpindexerMotorSpeed = 0.5;

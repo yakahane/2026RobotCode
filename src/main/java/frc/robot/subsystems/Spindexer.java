@@ -77,7 +77,6 @@ public class Spindexer extends SubsystemBase {
     LaserCan.Measurement measurement = SpindexerLaser.getMeasurement();
 
     if (measurement != null && measurement.status == LaserCan.LASERCAN_STATUS_VALID_MEASUREMENT) {
-
       if (measurement.distance_mm <= SpindexerConstants.SpindexerDistance) {
         return true;
 

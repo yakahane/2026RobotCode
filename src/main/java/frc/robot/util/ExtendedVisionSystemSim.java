@@ -5,7 +5,6 @@ import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import org.photonvision.simulation.VisionSystemSim;
 
 public class ExtendedVisionSystemSim extends VisionSystemSim {
-
   public ExtendedVisionSystemSim(String name) {
     super(name);
   }

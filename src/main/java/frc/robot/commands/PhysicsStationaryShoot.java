@@ -53,7 +53,6 @@ public class PhysicsStationaryShoot extends Command {
   // Called every time the scheduler runs while the command is scheduled.
   @Override
   public void execute() {
-
     Pose2d turretPose =
         robotPose
             .get()

@@ -132,6 +132,11 @@ spotless {
         }
         toggleOffOn()
         googleJavaFormat()
+        replaceRegex(
+                'No empty lines at start of block',
+                '(\\{\\r?\\n)\\s*\\r?\\n',
+                '$1'
+                )
         removeUnusedImports()
         trimTrailingWhitespace()
         endWithNewline()

@@ -67,13 +67,11 @@ public class Shooter extends SubsystemBase {
   }
 
   public LinearVelocity getExitVelocity() {
-
     return MetersPerSecond.of(9.353);
   }
 
   @Override
   public void periodic() {
-
     if (currentSpeed != goalSpeed) {
       currentSpeed = goalSpeed;
       setSpeed(currentSpeed);

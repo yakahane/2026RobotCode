@@ -17,12 +17,10 @@ import frc.robot.Constants.TurretConstants;
 
 /** Add your docs here. */
 public class HoodShotCalculator {
-
   public record ShotSolution(Angle hoodAngle, LinearVelocity exitVelocity) {}
 
   private static LinearVelocity solveVelocityGivenAngle(
       Distance distance, Distance deltaHeight, Angle shotAngle) {
-
     double d = distance.in(Meters);
     double dH = deltaHeight.in(Meters);
     double angle = shotAngle.in(Radians);
@@ -41,7 +39,6 @@ public class HoodShotCalculator {
 
   public static ShotSolution solveShot(
       Distance distance, Distance targetHeight, LinearVelocity preferredVelocity) {
-
     double d = distance.in(Meters);
     double dh = targetHeight.minus(TurretConstants.robotToTurret.getMeasureZ()).in(Meters);
     double v = preferredVelocity.in(MetersPerSecond);

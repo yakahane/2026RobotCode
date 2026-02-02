@@ -53,7 +53,6 @@ public class Intake extends SubsystemBase {
   }
 
   public boolean isIntakeDeployed() {
-
     // return armMotor.getPosition() > armDownPositionTolerance ? true : false;
     return true; // FOR TESTING IN SIM
   }
