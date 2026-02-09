@@ -16,6 +16,7 @@ import com.pathplanner.lib.controllers.PPHolonomicDriveController;
 import com.pathplanner.lib.path.PathPlannerPath;
 import com.pathplanner.lib.util.PathPlannerLogging;
 import edu.wpi.first.epilogue.Logged;
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.VecBuilder;
@@ -25,6 +26,7 @@ import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform2d;
 import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.math.numbers.N1;
@@ -32,6 +34,7 @@ import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.units.measure.Distance;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.Notifier;
@@ -46,11 +49,12 @@ import edu.wpi.first.wpilibj2.command.Subsystem;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine;
 import frc.robot.Constants.AutoConstants;
 import frc.robot.Constants.FieldConstants;
+import frc.robot.Constants.SimConstants;
 import frc.robot.Constants.TurretConstants;
 import frc.robot.Constants.VisionConstants;
 import frc.robot.generated.TunerConstants.TunerSwerveDrivetrain;
 import frc.robot.util.AllianceUtil;
-import frc.robot.util.ExtendedVisionSystemSim;
+import frc.robot.util.ExtendedClasses.ExtendedVisionSystemSim;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -60,6 +64,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import lombok.Setter;
 import org.photonvision.EstimatedRobotPose;
 import org.photonvision.PhotonCamera;
 import org.photonvision.PhotonPoseEstimator;
@@ -105,8 +110,6 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
           .withForwardPerspective(ForwardPerspectiveValue.OperatorPerspective)
           .withSteerRequestType(SteerRequestType.Position);
 
-  private Timer timer = new Timer();
-
   private double targetFuelYaw = 0;
   public Rotation2d desiredFuelRotation = Rotation2d.k180deg;
 
@@ -142,6 +145,8 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
   private Optional<Matrix<N8, N1>> arducamFuelDistCoeffs = Optional.empty();
 
   public SwerveDriveState stateCache = getState();
+
+  @Setter private Translation2d lookAheadPose = new Translation2d();
 
   private ExtendedVisionSystemSim visionSim;
 
@@ -345,20 +350,23 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
         Set.of(this));
   }
 
-  public Command driveOverBump(String direction) {
-    return Commands.runOnce(timer::restart)
-        .andThen(
-            Commands.run(
-                () -> {
-                  if (direction == "To Middle") {
-                    this.setControl(
-                        fieldOriented.withVelocityX(0.1).withVelocityY(0).withRotationalRate(0));
-                  } else {
-                    this.setControl(
-                        fieldOriented.withVelocityX(-0.1).withVelocityY(0).withRotationalRate(0));
-                  }
-                }))
-        .until(() -> timer.hasElapsed(0.5) && getPigeon2().getPitch().getValueAsDouble() == 0);
+  public Command driveOverBump(boolean toMiddle) {
+    double startTime = Timer.getFPGATimestamp();
+    return Commands.run(
+            () -> {
+              if (toMiddle) {
+                this.setControl(
+                    fieldOriented.withVelocityX(0.1).withVelocityY(0).withRotationalRate(0));
+              } else {
+                this.setControl(
+                    fieldOriented.withVelocityX(-0.1).withVelocityY(0).withRotationalRate(0));
+              }
+            })
+        .until(
+            () ->
+                (Timer.getFPGATimestamp() - startTime) > 0.5
+                    && Math.abs(getPigeon2().getPitch().getValueAsDouble()) <= 0.353)
+        .withTimeout(Seconds.of(3.53));
   }
 
   public Command pathFindThroughTrench() {
@@ -391,6 +399,146 @@ public class Swerve extends TunerSwerveDrivetrain implements Subsystem {
             },
             Set.of(this))
         .withName("PathFindThroughTrench");
+  }
+
+  public boolean tooCloseToHub() {
+
+    Translation2d turretPose =
+        stateCache.Pose
+            .getTranslation()
+            .plus(
+                TurretConstants.robotToTurretTransform
+                    .getTranslation()
+                    .rotateBy(stateCache.Pose.getRotation()));
+
+    double turretToHubDistance = lookAheadPose.getDistance(turretPose);
+
+    return turretToHubDistance < SimConstants.closestPossibleShotDistance.in(Meters);
+  }
+
+  public boolean onLeftSide() {
+    Pose2d pose = stateCache.Pose;
+    return !AllianceUtil.isRedAlliance() && pose.getMeasureY().gt(FieldConstants.fieldWidth.div(2))
+        || AllianceUtil.isRedAlliance() && pose.getMeasureY().lt(FieldConstants.fieldWidth.div(2));
+  }
+
+  public boolean inAllianceZone() {
+    Pose2d pose = stateCache.Pose;
+    return !AllianceUtil.isRedAlliance() && pose.getMeasureX().lt(FieldConstants.allianceZoneLength)
+        || AllianceUtil.isRedAlliance()
+            && pose.getMeasureX()
+                .gt(FieldConstants.fieldLength.minus(FieldConstants.allianceZoneLength));
+  }
+
+  public boolean inTrenchZone() {
+    Pose2d robotPose = stateCache.Pose;
+    for (Translation2d[] zone : FieldConstants.TRENCH_ZONES) {
+      if (robotPose.getX() >= zone[0].getX()
+          && robotPose.getX() <= zone[1].getX()
+          && robotPose.getY() >= zone[0].getY()
+          && robotPose.getY() <= zone[1].getY()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public boolean inBumpZone() {
+    Pose2d robotPose = stateCache.Pose;
+    for (Translation2d[] zone : FieldConstants.BUMP_ZONES) {
+      if (robotPose.getX() >= zone[0].getX()
+          && robotPose.getX() <= zone[1].getX()
+          && robotPose.getY() >= zone[0].getY()
+          && robotPose.getY() <= zone[1].getY()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public Distance getTrenchY() {
+    Pose2d robotPose = stateCache.Pose;
+    if (robotPose.getMeasureY().gte(FieldConstants.fieldWidth.div(2))) {
+      return FieldConstants.fieldWidth.minus(FieldConstants.TRENCH_CENTER);
+    }
+    return FieldConstants.TRENCH_CENTER;
+  }
+
+  public Rotation2d getTrenchLockAngle() {
+    if (Math.abs(MathUtil.inputModulus(stateCache.Pose.getRotation().getDegrees(), -180, 180))
+        < 90) {
+      return Rotation2d.kZero;
+    } else {
+      return Rotation2d.k180deg;
+    }
+  }
+
+  public Rotation2d getBumpLockAngle() {
+    for (int i = -135; i < 180; i += 90) {
+      if (Math.abs(MathUtil.inputModulus(stateCache.Pose.getRotation().getDegrees() - i, -180, 180))
+          <= 45) {
+        return Rotation2d.fromDegrees(i);
+      }
+    }
+    return Rotation2d.kZero;
+  }
+
+  public Pose2d getClosestTrenchPose() {
+    Pose2d robotPose = stateCache.Pose;
+    if (robotPose.getMeasureY().gte(FieldConstants.fieldWidth.div(2))) {
+      if (robotPose.getMeasureX().gte(FieldConstants.fieldLength.div(2))) {
+        return new Pose2d(
+            FieldConstants.fieldLength.minus(FieldConstants.TRENCH_BUMP_X).in(Meters),
+            FieldConstants.fieldWidth.minus(FieldConstants.TRENCH_CENTER).in(Meters),
+            Rotation2d.kZero);
+      }
+
+      return new Pose2d(
+          FieldConstants.TRENCH_BUMP_X.in(Meters),
+          FieldConstants.fieldWidth.minus(FieldConstants.TRENCH_CENTER).in(Meters),
+          Rotation2d.kZero);
+    }
+
+    if (robotPose.getMeasureX().gte(FieldConstants.fieldLength.div(2))) {
+      return new Pose2d(
+          FieldConstants.fieldLength.minus(FieldConstants.TRENCH_BUMP_X).in(Meters),
+          FieldConstants.TRENCH_CENTER.in(Meters),
+          Rotation2d.kZero);
+    }
+
+    return new Pose2d(
+        FieldConstants.TRENCH_BUMP_X.in(Meters),
+        FieldConstants.TRENCH_CENTER.in(Meters),
+        Rotation2d.kZero);
+  }
+
+  public Pose2d getClosestBumpPose() {
+    Pose2d robotPose = stateCache.Pose;
+    if (robotPose.getMeasureY().gte(FieldConstants.fieldWidth.div(2))) {
+      if (robotPose.getMeasureX().gte(FieldConstants.fieldLength.div(2))) {
+        return new Pose2d(
+            FieldConstants.fieldLength.minus(FieldConstants.TRENCH_BUMP_X).in(Meters),
+            FieldConstants.fieldWidth.minus(FieldConstants.BUMP_CENTER_Y).in(Meters),
+            Rotation2d.kZero);
+      }
+
+      return new Pose2d(
+          FieldConstants.TRENCH_BUMP_X.in(Meters),
+          FieldConstants.fieldWidth.minus(FieldConstants.BUMP_CENTER_Y).in(Meters),
+          Rotation2d.kZero);
+    }
+
+    if (robotPose.getMeasureX().gte(FieldConstants.fieldLength.div(2))) {
+      return new Pose2d(
+          FieldConstants.fieldLength.minus(FieldConstants.TRENCH_BUMP_X).in(Meters),
+          FieldConstants.BUMP_CENTER_Y.in(Meters),
+          Rotation2d.kZero);
+    }
+
+    return new Pose2d(
+        FieldConstants.TRENCH_BUMP_X.in(Meters),
+        FieldConstants.BUMP_CENTER_Y.in(Meters),
+        Rotation2d.kZero);
   }
 
   @Override

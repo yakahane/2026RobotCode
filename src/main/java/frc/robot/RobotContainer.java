@@ -7,26 +7,27 @@ package frc.robot;
 import static edu.wpi.first.units.Units.Inches;
 import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
+import static edu.wpi.first.units.Units.Seconds;
 
 import com.pathplanner.lib.auto.AutoBuilder;
 import com.pathplanner.lib.auto.NamedCommands;
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.wpilibj.GenericHID.RumbleType;
 import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
-import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
 import edu.wpi.first.wpilibj2.command.sysid.SysIdRoutine.Direction;
 import frc.robot.Constants.FieldConstants;
 import frc.robot.Constants.OperatorConstants;
+import frc.robot.Constants.SOTMConstants;
 import frc.robot.Constants.SwerveConstants;
+import frc.robot.commands.GuidedTeleopSwerve;
 import frc.robot.commands.MoveToFuel;
-import frc.robot.commands.PhysicsStationaryShoot;
 import frc.robot.commands.ShootOnTheMove;
-import frc.robot.commands.TeleopSwerve;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.Hood;
 import frc.robot.subsystems.Intake;
@@ -34,23 +35,18 @@ import frc.robot.subsystems.Shooter;
 import frc.robot.subsystems.Swerve;
 import frc.robot.subsystems.Turret;
 import frc.robot.util.AllianceUtil;
+import frc.robot.util.ExtendedClasses.ExtendedCommandXboxController;
 import frc.robot.util.FuelSim;
+import frc.robot.util.HubTracker;
 import frc.robot.util.RobotVisualization;
 import frc.robot.util.SwerveTelemetry;
 import java.util.function.Supplier;
 
-/**
- * This class is where the bulk of the robot should be declared. Since Command-based is a
- * "declarative" paradigm, very little robot logic should actually be handled in the {@link Robot}
- * periodic methods (other than the scheduler calls). Instead, the structure of the robot (including
- * subsystems, commands, and trigger mappings) should be declared here.
- */
 public class RobotContainer {
-  // Replace with CommandPS4Controller or CommandJoystick if needed
-  private final CommandXboxController driverController =
-      new CommandXboxController(OperatorConstants.kDriverControllerPort);
-  private final CommandXboxController operatorController =
-      new CommandXboxController(OperatorConstants.kOperatorControllerPort);
+  private final ExtendedCommandXboxController driverController =
+      new ExtendedCommandXboxController(OperatorConstants.kDriverControllerPort);
+  private final ExtendedCommandXboxController operatorController =
+      new ExtendedCommandXboxController(OperatorConstants.kOperatorControllerPort);
 
   private SendableChooser<Command> autoChooser;
 
@@ -61,6 +57,19 @@ public class RobotContainer {
               .map(AllianceUtil::flipPose)
               .toList()
               .get(ferryPoseIndex);
+
+  private final Supplier<Pose2d> leftFerryPose =
+      () -> AllianceUtil.flipPose(FieldConstants.blueFerryPoints.get(0));
+
+  private final Supplier<Pose2d> rightFerryPose =
+      () ->
+          AllianceUtil.flipPose(
+              FieldConstants.blueFerryPoints.get(FieldConstants.blueFerryPoints.size() - 1));
+
+  private Pose2d goalShotTarget;
+  private final Supplier<Pose2d> goalShotTargetSupplier = () -> goalShotTarget;
+
+  private boolean canPreShoot = false;
 
   @Logged(name = "Swerve")
   private final Swerve swerve = TunerConstants.createDrivetrain();
@@ -81,16 +90,43 @@ public class RobotContainer {
   private final RobotVisualization robotVisualization =
       new RobotVisualization(turret, hood, swerve, shooter);
 
-  private final SwerveTelemetry swerveTelemetry = new SwerveTelemetry();
-
   @Logged(name = "Fuel Sim")
   private final FuelSim fuelInstance = FuelSim.getInstance();
 
-  /** The container for the robot. Contains subsystems, OI devices, and commands. */
+  private final SwerveTelemetry swerveTelemetry = new SwerveTelemetry();
+
+  Trigger onLeftSideTrigger = new Trigger(() -> swerve.onLeftSide());
+  Trigger inAllianceZoneTrigger = new Trigger(() -> swerve.inAllianceZone());
+  Trigger activeHubTrigger =
+      new Trigger(HubTracker::isActive).or(() -> HubTracker.getMatchTime() < 0);
+  Trigger automatedShootingTrigger =
+      new Trigger(() -> SmartDashboard.getBoolean("Automated Shooting Toggle", false));
+
+  Trigger tooCloseToHubTrigger = new Trigger(() -> swerve.tooCloseToHub());
+
+  Trigger preShiftShoot =
+      new Trigger(
+              () -> {
+                double timeUntilActive =
+                    HubTracker.timeUntilActive().orElse(Seconds.of(0)).in(Seconds);
+
+                double distanceToHub =
+                    swerve
+                        .getRobotPose()
+                        .getTranslation()
+                        .getDistance(AllianceUtil.getHubPose().getTranslation());
+
+                double timeOfFlight = SOTMConstants.timeOfFlightMap.get(distanceToHub);
+
+                return (timeUntilActive) <= timeOfFlight;
+              })
+          .and(activeHubTrigger.negate()) // only need to preshoot if not already active
+          .and(inAllianceZoneTrigger) // only preshoot if in alliance zone
+          .and(tooCloseToHubTrigger.negate()); // only shoot if we are far enough away
+
   public RobotContainer() {
-    NamedCommands.registerCommand("Drive Over Bump To Middle", swerve.driveOverBump("To Middle"));
-    NamedCommands.registerCommand(
-        "Drive Over Bump To Alliance", swerve.driveOverBump("To Alliance"));
+    NamedCommands.registerCommand("Drive Over Bump To Middle", swerve.driveOverBump(true));
+    NamedCommands.registerCommand("Drive Over Bump To Alliance", swerve.driveOverBump(false));
     NamedCommands.registerCommand("Move To Fuel", new MoveToFuel(swerve).withTimeout(2));
     NamedCommands.registerCommand(
         "Shoot On The Move",
@@ -118,9 +154,9 @@ public class RobotContainer {
     NamedCommands.registerCommand(
         "Shoot", Commands.run(() -> shooter.setSpeed(MetersPerSecond.of(1))).withTimeout(1));
 
-    // Configure the trigger bindings
     configureDriverBindings();
     // configureOperatorBindings();
+
     swerve.configureAutoBuilder();
 
     configureAutoChooser();
@@ -132,17 +168,27 @@ public class RobotContainer {
     if (RobotBase.isSimulation()) {
       configureFuelSim();
     }
+
+    goalShotTarget = AllianceUtil.getHubPose();
+
+    inAllianceZoneTrigger.onTrue(
+        Commands.runOnce(() -> goalShotTarget = AllianceUtil.getHubPose()));
+
+    onLeftSideTrigger
+        .and(inAllianceZoneTrigger.negate())
+        .onTrue(Commands.runOnce(() -> goalShotTarget = leftFerryPose.get()));
+
+    onLeftSideTrigger
+        .negate()
+        .and(inAllianceZoneTrigger.negate())
+        .onTrue(Commands.runOnce(() -> goalShotTarget = rightFerryPose.get()));
+
+    preShiftShoot.onTrue(driverController.rumbleFor(RumbleType.kBothRumble, 1.0, 1));
+
+    preShiftShoot.onTrue(Commands.runOnce(() -> canPreShoot = true));
+    activeHubTrigger.onFalse(Commands.runOnce(() -> canPreShoot = false));
   }
 
-  /**
-   * Use this method to define your trigger->command mappings. Triggers can be created via the
-   * {@link Trigger#Trigger(java.util.function.BooleanSupplier)} constructor with an arbitrary
-   * predicate, or via the named factories in {@link
-   * edu.wpi.first.wpilibj2.command.button.CommandGenericHID}'s subclasses for {@link
-   * CommandXboxController Xbox}/{@link edu.wpi.first.wpilibj2.command.button.CommandPS4Controller
-   * PS4} controllers or {@link edu.wpi.first.wpilibj2.command.button.CommandJoystick Flight
-   * joysticks}.
-   */
   private void configureFuelSim() {
     fuelInstance.spawnStartingFuel();
     fuelInstance.registerRobot(
@@ -174,12 +220,26 @@ public class RobotContainer {
             .ignoringDisable(true));
 
     SmartDashboard.putBoolean("Air Resistance Toggle", false);
+    SmartDashboard.putBoolean("Only Score while Active", false);
+    SmartDashboard.putBoolean("Automated Shooting Toggle", false);
   }
 
   private void configureDriverBindings() {
     Trigger slowMode = driverController.leftTrigger();
+    Trigger manualOverrideButton = driverController.rightStick();
+    Trigger shootButton = driverController.rightTrigger();
+
+    (activeHubTrigger.or(() -> canPreShoot))
+        .and(automatedShootingTrigger)
+        .and(inAllianceZoneTrigger)
+        .and(shootButton.negate())
+        .and(tooCloseToHubTrigger.negate())
+        .whileTrue(
+            new ShootOnTheMove(
+                swerve, turret, hood, shooter, goalShotTargetSupplier, robotVisualization));
+
     swerve.setDefaultCommand(
-        new TeleopSwerve(
+        new GuidedTeleopSwerve(
             driverController::getLeftY,
             driverController::getLeftX,
             driverController::getRightX,
@@ -189,48 +249,29 @@ public class RobotContainer {
               }
               return SwerveConstants.maxTranslationalSpeed;
             },
+            () -> manualOverrideButton.getAsBoolean() || shootButton.getAsBoolean(),
             swerve));
 
-    driverController.a().whileTrue(swerve.pathFindThroughTrench());
+    turret.setDefaultCommand(turret.faceTarget(goalShotTargetSupplier, swerve::getRobotPose));
 
-    turret.setDefaultCommand(turret.faceTarget(AllianceUtil::getHubPose, swerve::getRobotPose));
+    hood.setDefaultCommand(hood.aimForTarget(goalShotTargetSupplier, swerve::getRobotPose));
 
-    hood.setDefaultCommand(
-        new PhysicsStationaryShoot(
-            shooter,
-            hood,
-            robotVisualization,
-            swerve::getRobotPose,
-            AllianceUtil::getHubPose,
-            () -> FieldConstants.mainHubHeight));
-
-    driverController
-        .rightTrigger()
-        .whileTrue(
-            new ShootOnTheMove(
-                swerve, turret, hood, shooter, AllianceUtil::getHubPose, robotVisualization));
-
-    Trigger ferryMode = driverController.rightBumper();
-
-    ferryMode
-        .and(driverController.rightTrigger())
-        .whileTrue(
-            new ShootOnTheMove(
-                swerve, turret, hood, shooter, ferryPoseSupplier, robotVisualization));
-
-    driverController
-        .y()
-        .onTrue(
-            Commands.runOnce(
-                () -> {
-                  ferryPoseIndex = (ferryPoseIndex + 1) % FieldConstants.blueFerryPoints.size();
-                  swerve.updateFerryPoseDashboard(ferryPoseIndex);
-                }));
+    shootButton.whileTrue(
+        new ShootOnTheMove(
+            swerve, turret, hood, shooter, goalShotTargetSupplier, robotVisualization));
   }
 
   private void configureOperatorBindings() {
+    (activeHubTrigger.or(() -> canPreShoot))
+        .and(automatedShootingTrigger)
+        .and(inAllianceZoneTrigger)
+        // .and(shootButton.negate())
+        .whileTrue(
+            new ShootOnTheMove(
+                swerve, turret, hood, shooter, goalShotTargetSupplier, robotVisualization));
+
     Trigger ferryMode = operatorController.leftTrigger();
-    turret.setDefaultCommand(turret.faceTarget(AllianceUtil::getHubPose, swerve::getRobotPose));
+    // turret.setDefaultCommand(turret.faceTarget(AllianceUtil::getHubPose, swerve::getRobotPose));
 
     hood.setDefaultCommand(hood.aimForTarget(AllianceUtil::getHubPose, swerve::getRobotPose));
 
@@ -270,7 +311,7 @@ public class RobotContainer {
     autoChooser.addOption(
         "[SysID] Quasistatic Steer Forward", swerve.sysIdQuasistaticSteer(Direction.kForward));
     autoChooser.addOption(
-        "[SysID] Quasistatic Steer Reverse", swerve.sysIdQuasistaticSteer(Direction.kForward));
+        "[SysID] Quasistatic Steer Reverse", swerve.sysIdQuasistaticSteer(Direction.kReverse));
     autoChooser.addOption(
         "[SysID] Dynamic Steer Forward", swerve.sysIdDynamicSteer(Direction.kForward));
     autoChooser.addOption(

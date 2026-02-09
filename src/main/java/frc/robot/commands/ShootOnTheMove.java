@@ -5,7 +5,6 @@
 package frc.robot.commands;
 
 import static edu.wpi.first.units.Units.Degrees;
-import static edu.wpi.first.units.Units.MetersPerSecond;
 
 import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.filter.LinearFilter;
@@ -48,6 +47,7 @@ public class ShootOnTheMove extends Command {
   private RobotVisualization robotVisualization;
 
   private double startTime;
+  private boolean isFirstShot = true;
 
   public ShootOnTheMove(
       Swerve swerve,
@@ -95,28 +95,31 @@ public class ShootOnTheMove extends Command {
             swerve, turret, targetPoseSupplier.get(), fieldAccelX, fieldAccelY, fieldSpeeds);
 
     turret.setTargetAngle(shootingParameters.turretAngle());
-
     hood.setTargetAngle(shootingParameters.hoodAngle());
-
     shooter.setGoalSpeed(shootingParameters.shooterSpeed());
+    swerve.setLookAheadPose(shootingParameters.lookAheadPosition());
 
     double turretErrorDeg =
         turret.getTurretAngle().in(Degrees) - shootingParameters.turretAngle().in(Degrees);
     double hoodErrorDeg =
         hood.getHoodAngle().in(Degrees) - shootingParameters.hoodAngle().in(Degrees);
-    // if (turretSetPointDebouncer.calculate(Math.abs(turretErrorDeg) <= turretTolerance)
-    //     && hoodSetPointDebouncer.calculate(Math.abs(hoodErrorDeg) <= hoodTolerance)
-    //     && shooterDebouncer.calculate(shooterAtSetPoint)) {
-    if ((Timer.getFPGATimestamp() - startTime) > 1 / SimConstants.fuelsPerSecond) {
-      robotVisualization.shootFuel(shootingParameters);
-      startTime = Timer.getFPGATimestamp();
+
+    if (turretSetPointDebouncer.calculate(Math.abs(turretErrorDeg) <= turretTolerance)
+        && hoodSetPointDebouncer.calculate(Math.abs(hoodErrorDeg) <= hoodTolerance)
+        && shooterDebouncer.calculate(shooterAtSetPoint)) {
+      if (isFirstShot
+          || ((Timer.getFPGATimestamp() - startTime) > 1 / SimConstants.fuelsPerSecond)) {
+        robotVisualization.shootFuel(shootingParameters);
+
+        startTime = Timer.getFPGATimestamp();
+        isFirstShot = false;
+      }
+
+    } else {
+      // indexer.stop();
     }
-    // } else {
-    //   // indexer.stop();
-    // }
   }
 
-  // Called once the command ends or is interrupted.
   @Override
   public void end(boolean interrupted) {
     // shooter.stop();
@@ -125,7 +128,6 @@ public class ShootOnTheMove extends Command {
     hood.stopHood();
   }
 
-  // Returns true when the command should end.
   @Override
   public boolean isFinished() {
     return false;
