@@ -63,10 +63,18 @@ public class GuidedTeleopSwerve extends Command {
 
   private final Trigger inBumpZoneTrigger;
 
-  private final PIDController trenchYController = new PIDController(6, 0, 0);
-  private final PIDController rotationController = new PIDController(8, 0, 0);
+  private final PIDController trenchYController = new PIDController(4.0, 0, 0.05);
+  private final PIDController rotationController = new PIDController(8, 0, 0.10);
+
+  private final double trenchYControllerTolerance = 0.02;
+  private final double trenchYVelocityTolerance = 0.0353;
+  private final double rotationControllerTolerance = Units.degreesToRadians(1);
+  private final double rotationVelocityTolerance = Units.degreesToRadians(0.5);
 
   private DriveMode currentDriveMode = DriveMode.NormalDrive;
+
+  private Vector<N2> commandedVelocity = new Vector<>(Nat.N2());
+  private Vector<N2> toTarget = new Vector<>(Nat.N2());
 
   public GuidedTeleopSwerve(
       DoubleSupplier forwardSupplier,
@@ -99,16 +107,15 @@ public class GuidedTeleopSwerve extends Command {
 
   private double getDotProduct() {
     Pose2d robotPose = swerve.getRobotPose();
+
     Pose2d targetPose =
         inTrenchZoneTrigger.getAsBoolean()
             ? swerve.getClosestTrenchPose()
             : swerve.getClosestBumpPose();
 
-    Vector<N2> commandedVelocity = new Vector<>(Nat.N2());
     commandedVelocity.set(0, 0, getForwardSpeed());
     commandedVelocity.set(1, 0, getStrafeSpeed());
 
-    Vector<N2> toTarget = new Vector<>(Nat.N2());
     toTarget.set(0, 0, (flipFactor) * (targetPose.getX() - robotPose.getX()));
     toTarget.set(1, 0, (flipFactor) * (targetPose.getY() - robotPose.getY()));
 
@@ -122,12 +129,23 @@ public class GuidedTeleopSwerve extends Command {
   }
 
   private double getForwardSpeed() {
-    return forwardRateLimiter.calculate(
-        -forwardSupplier.getAsDouble() * getMaxTranslationalSpeed());
+    double forwardSpeed =
+        forwardRateLimiter.calculate(-forwardSupplier.getAsDouble() * getMaxTranslationalSpeed());
+    if (Math.abs(forwardSupplier.getAsDouble()) <= 0.00353) {
+      forwardSpeed = 0;
+      forwardRateLimiter.reset(0);
+    }
+    return forwardSpeed;
   }
 
   private double getStrafeSpeed() {
-    return strafeRateLimiter.calculate(-strafeSupplier.getAsDouble() * getMaxTranslationalSpeed());
+    double stafeSpeed =
+        strafeRateLimiter.calculate(-strafeSupplier.getAsDouble() * getMaxTranslationalSpeed());
+    if (Math.abs(strafeSupplier.getAsDouble()) <= 0.00353) {
+      stafeSpeed = 0;
+      strafeRateLimiter.reset(0);
+    }
+    return stafeSpeed;
   }
 
   private double getRotationSpeed() {
@@ -139,11 +157,10 @@ public class GuidedTeleopSwerve extends Command {
     double rotationSpeed =
         joystickRotation * SwerveConstants.maxRotationalSpeed.in(RotationsPerSecond);
 
-    if (Math.abs(rotationSpeed) <= (Units.degreesToRotations(1.5))) {
+    if (Math.abs(rotationSpeed) <= Units.degreesToRadians(1.5)) {
       rotationRateLimiter.reset(0);
       return 0;
     }
-
     return rotationRateLimiter.calculate(rotationSpeed);
   }
 
@@ -167,6 +184,14 @@ public class GuidedTeleopSwerve extends Command {
 
     yVel = MathUtil.clamp(yVel, -getMaxTranslationalSpeed(), getMaxTranslationalSpeed());
 
+    if (trenchYController.atSetpoint() || Math.abs(yVel) < trenchYVelocityTolerance) {
+      yVel = 0;
+    }
+
+    if (rotationController.atSetpoint() || Math.abs(rotStraightSpeed) < rotationVelocityTolerance) {
+      rotStraightSpeed = 0;
+    }
+
     swerve.setControl(
         fieldOriented
             .withVelocityX(forward)
@@ -181,6 +206,10 @@ public class GuidedTeleopSwerve extends Command {
 
     rotDiagonalSpeed = MathUtil.clamp(rotDiagonalSpeed, -maxRotSpeedRads, maxRotSpeedRads);
 
+    if (rotationController.atSetpoint() || Math.abs(rotDiagonalSpeed) < rotationVelocityTolerance) {
+      rotDiagonalSpeed = 0;
+    }
+
     swerve.setControl(
         fieldOriented
             .withVelocityX(forward)
@@ -191,6 +220,9 @@ public class GuidedTeleopSwerve extends Command {
   @Override
   public void initialize() {
     rotationController.enableContinuousInput(-Math.PI, Math.PI);
+    trenchYController.setTolerance(trenchYControllerTolerance); // 2 cm
+    rotationController.setTolerance(rotationControllerTolerance); // 2 cm
+
     flipFactor = AllianceUtil.isRedAlliance() ? -1 : 1;
   }
 
@@ -200,11 +232,16 @@ public class GuidedTeleopSwerve extends Command {
     double strafeSpeed = getStrafeSpeed();
     double rotSpeed = getRotationSpeed();
 
-    double dotProduct = currentDriveMode == DriveMode.NormalDrive ? 0 : getDotProduct();
+    double dotProduct =
+        ((currentDriveMode == DriveMode.NormalDrive) || swerve.inTrenchBox())
+            ? 1.0
+            : getDotProduct();
+    // if midsts of trench then ignore the dot product and keep the robot centered
+    // also ignore dot product if we are in normal drive
 
     DriveMode effectiveDriveMode =
-        (manualOverrideSupplier.getAsBoolean()
-                || (dotProduct < 0.05)) // only lock if in trying to drive in that direction
+        (manualOverrideSupplier.getAsBoolean())
+                || (dotProduct < 0.10) // only lock if in trying to drive in that direction
             ? DriveMode.NormalDrive
             : currentDriveMode;
 

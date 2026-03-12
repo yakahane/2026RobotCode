@@ -4,103 +4,147 @@
 
 package frc.robot.subsystems;
 
+import static edu.wpi.first.units.Units.Amps;
+
 import au.grapplerobotics.LaserCan;
-import com.ctre.phoenix6.configs.TalonFXConfiguration;
+import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.hardware.TalonFX;
 import edu.wpi.first.math.filter.Debouncer;
+import edu.wpi.first.units.measure.Current;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import frc.robot.Constants.SpindexerConstants;
 
 public class Spindexer extends SubsystemBase {
-  private TalonFX SpindexerMotor;
-  private LaserCan SpindexerLaser;
-  private Debouncer SpindexDebouncer;
-  private Debouncer currentEmptyDebouncer = new Debouncer(0.4);
+  private TalonFX spindexerMotor;
+  private TalonFX kickerMotor;
+  private Debouncer currentEmptyDebouncer = new Debouncer(1.0);
+
+  private int ballCounter = 0;
+
+  private LaserCan kickerLaser;
+
+  private StatusSignal<Current> kickerCurrent;
+  private StatusSignal<Current> spindexerCurrent;
 
   /** Creates a new Spindexer. */
   public Spindexer() {
-    SpindexerMotor = new TalonFX(SpindexerConstants.SpindexerMotorID);
-    SpindexerLaser = new LaserCan(SpindexerConstants.SpindexerLaserID);
-    SpindexDebouncer = new Debouncer(1.5);
+    spindexerMotor = new TalonFX(SpindexerConstants.spindexerMotorID);
+    kickerMotor = new TalonFX(SpindexerConstants.kickerMotorID);
+    kickerLaser = new LaserCan(SpindexerConstants.kickerLaserID);
 
-    TalonFXConfiguration spindexerConfig = new TalonFXConfiguration();
-    spindexerConfig.Slot0.kP = 0.0;
-    spindexerConfig.Slot0.kI = 2.5;
-    spindexerConfig.Slot0.kD = 5.3;
+    spindexerMotor.getConfigurator().apply(SpindexerConstants.spindexerConfigs);
+    kickerMotor.getConfigurator().apply(SpindexerConstants.spindexerConfigs);
 
-    SpindexerMotor.getConfigurator().apply(new TalonFXConfiguration());
+    kickerCurrent = kickerMotor.getStatorCurrent();
+    spindexerCurrent = spindexerMotor.getStatorCurrent();
   }
 
-  public void setSpeed() {
-    SpindexerMotor.set(SpindexerConstants.SpindexerMotorSpeed);
+  public void addBall() {
+    ballCounter++;
   }
 
-  public void stopMotor() {
-    SpindexerMotor.stopMotor();
+  public void zeroBalls() {
+    ballCounter = 0;
   }
 
-  public double getSpeed() {
-    return SpindexerMotor.get();
+  public int getBalls() {
+    return ballCounter;
   }
 
-  public double getCurrent() {
-    return SpindexerMotor.getStatorCurrent().getValueAsDouble();
-  }
+  public boolean kickerLaserBroken() {
+    LaserCan.Measurement measurement = kickerLaser.getMeasurement();
 
-  public boolean currentSaysEmpty() {
-    return currentEmptyDebouncer.calculate(getCurrent() < 9.0); // random number need to test
-  }
-
-  public Command runSpindexer() {
-    return run(this::setSpeed);
-  }
-
-  public Command stopSpindexer() {
-    return run(this::stopMotor);
-  }
-
-  public Command upSpeed(double speed) {
-    return run(
-        () -> {
-          SpindexerMotor.set(speed);
-        });
-  }
-
-  public Command downSpeed(double speed) {
-    return run(
-        () -> {
-          SpindexerMotor.set(-speed);
-        });
-  }
-
-  public Command runUntilEmptyCommand() {
-    return (runSpindexer()).until(() -> SpindexDebouncer.calculate(!beamBroken()));
-  }
-
-  public boolean beamBroken() {
-    LaserCan.Measurement measurement = SpindexerLaser.getMeasurement();
-
-    if (measurement != null && measurement.status == LaserCan.LASERCAN_STATUS_VALID_MEASUREMENT) {
-      if (measurement.distance_mm <= SpindexerConstants.SpindexerDistance) {
-        return true;
-
-      } else {
-        return false;
-      }
+    if (measurement != null
+        && measurement.status == LaserCan.LASERCAN_STATUS_VALID_MEASUREMENT
+        && measurement.distance_mm < 45) {
+      return true;
     } else {
       return false;
     }
   }
 
+  public void stopSpindexerMotor() {
+    spindexerMotor.stopMotor();
+  }
+
+  public void stopKickerMotor() {
+    kickerMotor.stopMotor();
+  }
+
+  public double getSpindexerSpeed() {
+    return spindexerMotor.get();
+  }
+
+  public double getKickerSpeed() {
+    return kickerMotor.get();
+  }
+
+  public boolean currentSaysEmpty() {
+    return currentEmptyDebouncer.calculate(
+        spindexerCurrent.getValue().in(Amps) < 9.0); // random number need to test
+  }
+
+  public void runBoth() {
+    spindexerMotor.set(SpindexerConstants.spindexerMotorSpeed);
+    kickerMotor.set(SpindexerConstants.kickerMotorSpeed);
+  }
+
+  public void stopBoth() {
+    spindexerMotor.stopMotor();
+    kickerMotor.stopMotor();
+  }
+
+  public Command idleReverse() {
+    return run(
+        () -> {
+          spindexerMotor.set(SpindexerConstants.spindexerIdleSpeed);
+          kickerMotor.set(SpindexerConstants.kickerIdleSpeed);
+        });
+  }
+
+  public Command manualBoth() {
+    return run(
+        () -> {
+          spindexerMotor.set(SpindexerConstants.spindexerMotorSpeed);
+          kickerMotor.set(SpindexerConstants.kickerMotorSpeed);
+        });
+  }
+
+  public Command runSpindexer() {
+    return run(() -> spindexerMotor.set(SpindexerConstants.spindexerMotorSpeed));
+  }
+
+  public Command runKicker() {
+    return run(() -> kickerMotor.set(SpindexerConstants.kickerMotorSpeed));
+  }
+
+  public Command stopSpindexerCommand() {
+    return runOnce(this::stopSpindexerMotor);
+  }
+
+  public Command stopKickerCommand() {
+    return runOnce(this::stopKickerMotor);
+  }
+
+  public Command runUntilEmptyCommand() {
+    return (run(() -> runBoth())).until(() -> currentSaysEmpty());
+  }
+
   public boolean isEmpty() {
-    return !beamBroken() && currentSaysEmpty();
+    return (spindexerMotor.get() > 0.1) && currentSaysEmpty();
   }
 
   @Override
   public void periodic() {
-    SmartDashboard.putNumber("Spindexer Current", getCurrent());
-    SmartDashboard.putBoolean("Spindexer Beam Broken", beamBroken());
+    spindexerCurrent.refresh();
+    kickerCurrent.refresh();
+
+    SmartDashboard.putNumber("Spindexer/Ball Counter", ballCounter);
+    SmartDashboard.putBoolean("Spindexer/Kicker Laser Broken", kickerLaserBroken());
+    SmartDashboard.putNumber("Spindexer/Spindexer Current", spindexerCurrent.getValue().in(Amps));
+    SmartDashboard.putNumber("Spindexer/Kicker Current", kickerCurrent.getValue().in(Amps));
+    SmartDashboard.putBoolean("Spindexer/Spindexer Empty", isEmpty());
   }
 }

@@ -1,83 +1,108 @@
 package frc.robot.subsystems;
 
+import static edu.wpi.first.units.Units.Meters;
 import static edu.wpi.first.units.Units.MetersPerSecond;
+import static edu.wpi.first.units.Units.RadiansPerSecond;
+import static edu.wpi.first.units.Units.RotationsPerSecond;
 
-import com.ctre.phoenix6.configs.MotionMagicConfigs;
-import com.ctre.phoenix6.configs.Slot0Configs;
-import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
+import com.ctre.phoenix6.controls.VelocityVoltage;
 import com.ctre.phoenix6.hardware.TalonFX;
+import edu.wpi.first.units.measure.AngularVelocity;
 import edu.wpi.first.units.measure.LinearVelocity;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
-import frc.robot.util.HoodShotCalculator.ShotSolution;
+import frc.robot.Constants.SOTMConstants;
+import frc.robot.Constants.ShooterConstants;
+import java.util.function.DoubleSupplier;
 
 public class Shooter extends SubsystemBase {
   /** Creates a new Shooter. */
-  private TalonFX shooterMotor = new TalonFX(75);
+  private TalonFX shooterMotor = new TalonFX(ShooterConstants.shooterMotorID);
 
-  private double speed;
-
-  private final MotionMagicVelocityVoltage shooterVelocity = new MotionMagicVelocityVoltage(0);
-
-  private LinearVelocity goalSpeed = MetersPerSecond.of(0);
-  private LinearVelocity currentSpeed = MetersPerSecond.of(0);
-  private ShotSolution currentShotSolution;
+  private final MotionMagicVelocityVoltage velocityMMRequest = new MotionMagicVelocityVoltage(0);
+  private final VelocityVoltage velocityRequest = new VelocityVoltage(0);
 
   public Shooter() {
-    TalonFXConfiguration config = new TalonFXConfiguration();
-    Slot0Configs slot0 = new Slot0Configs();
-    config.Slot0.kP = 0.12;
-    config.Slot0.kI = 0.0;
-    config.Slot0.kD = 0.0;
-    config.Slot0.kV = 0.12;
-    config.Slot0 = slot0;
-    MotionMagicConfigs mm = new MotionMagicConfigs();
-    mm.MotionMagicAcceleration = 80;
-    mm.MotionMagicJerk = 300;
-    config.MotionMagic = mm;
-
-    shooterMotor.getConfigurator().apply(config);
+    shooterMotor.getConfigurator().apply(ShooterConstants.shooterConfigs);
   }
 
-  public void setSpeed(LinearVelocity speed) {
-    // this should be rotations per second but ill fix later
-    shooterMotor.setControl(shooterVelocity.withVelocity(speed.in(MetersPerSecond)));
+  public Command reachGoalVelocityCommand(AngularVelocity goalVelocity) {
+    return run(() -> shooterMotor.setControl(velocityRequest.withVelocity(goalVelocity)));
   }
 
-  public LinearVelocity getGoalSpeed() {
-    return goalSpeed;
+  public void reachGoalVelocity(AngularVelocity goalVelocity) {
+    shooterMotor.setControl(velocityRequest.withVelocity(goalVelocity));
   }
 
-  public void stop() {
-    shooterMotor.stopMotor();
+  public void stopShooter() {
+    shooterMotor.setControl(velocityRequest.withVelocity(RotationsPerSecond.of(0)));
   }
 
-  public void setGoalSpeed(LinearVelocity speed) {
-    goalSpeed = speed;
+  public Command stopShooterCommand() {
+    // shooterMotor.stopMotor();
+    // goalSpeed = MetersPerSecond.of(0);
+    return run(
+        () ->
+            shooterMotor.setControl(
+                velocityRequest.withVelocity(linearToAngularVelocity(MetersPerSecond.of(0)))));
   }
 
-  public void logSolution(ShotSolution solution) {
-    currentShotSolution = solution;
-    setGoalSpeed(solution.exitVelocity());
+  public AngularVelocity linearToAngularVelocity(LinearVelocity vel) {
+    return RadiansPerSecond.of(
+        vel.in(MetersPerSecond) / ShooterConstants.flyWheelRadius.in(Meters));
   }
 
-  public ShotSolution getShotSolution() {
-    return currentShotSolution;
+  public LinearVelocity angularToLinearVelocity(AngularVelocity vel) {
+    return MetersPerSecond.of(
+        vel.in(RadiansPerSecond) * ShooterConstants.flyWheelRadius.in(Meters));
   }
 
-  public LinearVelocity getExitVelocity() {
-    return MetersPerSecond.of(9.353);
+  public AngularVelocity getCurrentVelocity() {
+    return shooterMotor.getVelocity().getValue();
+  }
+
+  public boolean shooterAtSetPoint(AngularVelocity goalSpeed) {
+    if (RobotBase.isSimulation()) return true;
+
+    AngularVelocity currentSpeed = getCurrentVelocity();
+
+    return Math.abs(currentSpeed.in(RotationsPerSecond) - goalSpeed.in(RotationsPerSecond))
+        < ShooterConstants.shooterSpeedTolerance.in(RotationsPerSecond);
+  }
+
+  public Command runMotor(double speed) {
+    return run(() -> shooterMotor.set(speed));
+  }
+
+  public void stopMotor() {
+    shooterMotor.set(0.0);
+  }
+
+  public Command manualInterpolatedShoot(DoubleSupplier turretToHubMeters) {
+    return run(
+        () ->
+            shooterMotor.setControl(
+                velocityRequest.withVelocity(
+                    linearToAngularVelocity(
+                        MetersPerSecond.of(
+                            SOTMConstants.shooterSpeedMapScoring.get(
+                                turretToHubMeters.getAsDouble()))))));
   }
 
   @Override
   public void periodic() {
-    if (currentSpeed != goalSpeed) {
-      currentSpeed = goalSpeed;
-      setSpeed(currentSpeed);
-    }
+    // shooterMotor.setControl(velocityRequest.withVelocity(linearToAngularVelocity(goalSpeed)));
 
-    SmartDashboard.putNumber("Shooter/Current speed", shooterMotor.get());
-    SmartDashboard.putNumber("Shooter/Goal speed", currentSpeed.in(MetersPerSecond));
+    // shooterMotor.setControl(
+    //     velocityRequest.withVelocity(SmartDashboard.getNumber("Dynamic Shooter Speed", 0)));
+
+    SmartDashboard.putNumber(
+        "Shooter/Current Angular Velocity", getCurrentVelocity().in(RotationsPerSecond));
+    // SmartDashboard.putNumber(
+    //     "Shooter/Current Linear Velocity",
+    //     angularToLinearVelocity(getCurrentVelocity()).in(MetersPerSecond));
   }
 }

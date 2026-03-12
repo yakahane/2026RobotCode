@@ -21,6 +21,7 @@ import edu.wpi.first.wpilibj.util.WPILibVersion;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 import frc.robot.util.FuelSim;
+// import frc.robot.util.FuelSim;
 import frc.robot.util.HubTracker;
 import frc.robot.util.LogUtil;
 import java.lang.management.GarbageCollectorMXBean;
@@ -47,6 +48,8 @@ public class Robot extends TimedRobot {
    * initialization code.
    */
   public Robot() {
+    // CanBridge.runTCP();
+
     DataLogManager.start();
     DriverStation.startDataLog(DataLogManager.getLog());
 
@@ -93,6 +96,7 @@ public class Robot extends TimedRobot {
 
     // SmartDashboard.putNumber("GatherData/Manual Shot Angle", HoodConstants.minAngle.in(Degrees));
     // SmartDashboard.putNumber("GatherData/Manual Shot Speed", 0);
+
   }
 
   /**
@@ -191,8 +195,8 @@ public class Robot extends TimedRobot {
   /** This function is called once when the robot is first started up. */
   @Override
   public void simulationInit() {
-    FuelSim.Hub.RED_HUB.resetScore();
-    FuelSim.Hub.BLUE_HUB.resetScore();
+    // FuelSim.Hub.RED_HUB.resetScore();
+    // FuelSim.Hub.BLUE_HUB.resetScore();
   }
 
   /** This function is called periodically whilst in simulation. */
@@ -203,10 +207,10 @@ public class Robot extends TimedRobot {
     FuelSim.getInstance().updateSim();
     FuelSim.getInstance()
         .toggleAirResistance(SmartDashboard.getBoolean("Air Resistance Toggle", false));
-    FuelSim.Hub.RED_HUB.toggleScoreWhenActive(
-        SmartDashboard.getBoolean("Only Score while Active", false));
-    FuelSim.Hub.BLUE_HUB.toggleScoreWhenActive(
-        SmartDashboard.getBoolean("Only Score while Active", false));
+    FuelSim.Hub.RED_HUB.toggleCountWhenActive(
+        SmartDashboard.getBoolean("Only Count while Active", false));
+    FuelSim.Hub.BLUE_HUB.toggleCountWhenActive(
+        SmartDashboard.getBoolean("Only Count while Active", false));
 
     SmartDashboard.putNumber("Red Alliance Score", FuelSim.Hub.RED_HUB.getScore());
     SmartDashboard.putNumber("Blue Alliance Score", FuelSim.Hub.BLUE_HUB.getScore());

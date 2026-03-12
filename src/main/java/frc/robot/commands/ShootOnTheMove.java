@@ -10,16 +10,20 @@ import edu.wpi.first.math.filter.Debouncer;
 import edu.wpi.first.math.filter.LinearFilter;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
+import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.Constants.SimConstants;
 import frc.robot.subsystems.Hood;
 import frc.robot.subsystems.Shooter;
+import frc.robot.subsystems.Spindexer;
 import frc.robot.subsystems.Swerve;
 import frc.robot.subsystems.Turret;
 import frc.robot.util.RobotVisualization;
 import frc.robot.util.SOTMCalculator;
 import frc.robot.util.SOTMCalculator.ShootingParameters;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /* You should consider using the more terse Command factories API instead https://docs.wpilib.org/en/stable/docs/software/commandbased/organizing-command-based.html#defining-commands */
@@ -28,14 +32,14 @@ public class ShootOnTheMove extends Command {
   private final Hood hood;
   private final Turret turret;
   private final Swerve swerve;
+  private final Spindexer spindexer;
 
-  private Debouncer hoodSetPointDebouncer = new Debouncer(0.1);
-  private Debouncer turretSetPointDebouncer = new Debouncer(0.1);
-  private Debouncer shooterDebouncer = new Debouncer(0.1);
+  private Debouncer hoodSetPointDebouncer = new Debouncer(0.02);
+  private Debouncer turretSetPointDebouncer = new Debouncer(0.02);
+  private Debouncer shooterDebouncer = new Debouncer(0.02);
 
-  private double turretTolerance = 3.53; // deg
-  private double hoodTolerance = 3.53; // deg
-  private boolean shooterAtSetPoint = true;
+  private double turretTolerance = 10.0; // deg
+  private double hoodTolerance = 2.0; // deg
 
   private LinearFilter accelXFilter = LinearFilter.movingAverage(2);
   private LinearFilter accelYFilter = LinearFilter.movingAverage(2);
@@ -47,22 +51,27 @@ public class ShootOnTheMove extends Command {
   private RobotVisualization robotVisualization;
 
   private double startTime;
-  private boolean isFirstShot = true;
+  private boolean isVisualizationFirstShot = true;
+  private BooleanSupplier scoringMode;
 
   public ShootOnTheMove(
       Swerve swerve,
       Turret turret,
       Hood hood,
       Shooter shooter,
+      Spindexer spindexer,
       Supplier<Pose2d> targetPoseSupplier,
-      RobotVisualization robotVisualization) {
+      RobotVisualization robotVisualization,
+      BooleanSupplier scoringMode) {
     this.swerve = swerve;
     this.turret = turret;
     this.hood = hood;
     this.shooter = shooter;
+    this.spindexer = spindexer;
     this.targetPoseSupplier = targetPoseSupplier;
     this.robotVisualization = robotVisualization;
-    addRequirements(hood, turret, shooter);
+    this.scoringMode = scoringMode;
+    addRequirements(hood, turret, shooter, spindexer);
   }
 
   // Called when the command is initially scheduled.
@@ -92,11 +101,25 @@ public class ShootOnTheMove extends Command {
 
     ShootingParameters shootingParameters =
         SOTMCalculator.getParameters(
-            swerve, turret, targetPoseSupplier.get(), fieldAccelX, fieldAccelY, fieldSpeeds);
+            swerve,
+            turret,
+            targetPoseSupplier.get(),
+            fieldAccelX,
+            fieldAccelY,
+            fieldSpeeds,
+            scoringMode.getAsBoolean());
 
-    turret.setTargetAngle(shootingParameters.turretAngle());
-    hood.setTargetAngle(shootingParameters.hoodAngle());
-    shooter.setGoalSpeed(shootingParameters.shooterSpeed());
+    Angle compensatedAngle = shootingParameters.turretAngle();
+
+    if ((compensatedAngle.in(Degrees) < -20)
+        && (compensatedAngle.in(Degrees) > -100)
+        && (swerve.getTurretToHubMeters() < 4.2)) {
+      compensatedAngle = compensatedAngle.minus(Degrees.of(6.7));
+    }
+
+    turret.moveToAngle(shootingParameters.turretAngle());
+    hood.moveToAngle(shootingParameters.hoodAngle());
+    shooter.reachGoalVelocity(shootingParameters.shooterSpeed());
     swerve.setLookAheadPose(shootingParameters.lookAheadPosition());
 
     double turretErrorDeg =
@@ -104,26 +127,32 @@ public class ShootOnTheMove extends Command {
     double hoodErrorDeg =
         hood.getHoodAngle().in(Degrees) - shootingParameters.hoodAngle().in(Degrees);
 
-    if (turretSetPointDebouncer.calculate(Math.abs(turretErrorDeg) <= turretTolerance)
-        && hoodSetPointDebouncer.calculate(Math.abs(hoodErrorDeg) <= hoodTolerance)
-        && shooterDebouncer.calculate(shooterAtSetPoint)) {
-      if (isFirstShot
-          || ((Timer.getFPGATimestamp() - startTime) > 1 / SimConstants.fuelsPerSecond)) {
-        robotVisualization.shootFuel(shootingParameters);
+    if ((turretSetPointDebouncer.calculate(Math.abs(turretErrorDeg) <= turretTolerance)
+            && hoodSetPointDebouncer.calculate(Math.abs(hoodErrorDeg) <= hoodTolerance)
+            && shooterDebouncer.calculate(
+                shooter.shooterAtSetPoint(shootingParameters.shooterSpeed())))
+        || !scoringMode.getAsBoolean()) {
+      if (RobotBase.isSimulation()) { // if sim and ready to shoot
+        if (isVisualizationFirstShot
+            || ((Timer.getFPGATimestamp() - startTime) > 1 / SimConstants.fuelsPerSecond)) {
+          robotVisualization.shootFuel(shootingParameters);
 
-        startTime = Timer.getFPGATimestamp();
-        isFirstShot = false;
+          startTime = Timer.getFPGATimestamp();
+          isVisualizationFirstShot = false;
+        }
+      } else { // if real and ready to shoot
+        spindexer.runBoth();
       }
 
     } else {
-      // indexer.stop();
+      spindexer.stopBoth();
     }
   }
 
   @Override
   public void end(boolean interrupted) {
-    // shooter.stop();
-    // indexer.stop();
+    shooter.stopShooter();
+    spindexer.stopBoth();
     turret.stopTurret();
     hood.stopHood();
   }

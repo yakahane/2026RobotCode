@@ -5,9 +5,9 @@
 package frc.robot.subsystems;
 
 import static edu.wpi.first.units.Units.Degrees;
+import static edu.wpi.first.units.Units.DegreesPerSecond;
 import static edu.wpi.first.units.Units.Radians;
 import static edu.wpi.first.units.Units.Rotations;
-import static edu.wpi.first.units.Units.RotationsPerSecond;
 
 import com.ctre.phoenix6.StatusSignal;
 import com.ctre.phoenix6.configs.CANcoderConfiguration;
@@ -20,13 +20,13 @@ import com.ctre.phoenix6.sim.TalonFXSimState;
 import edu.wpi.first.epilogue.Logged;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.system.plant.DCMotor;
 import edu.wpi.first.math.system.plant.LinearSystemId;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.units.measure.Angle;
+import edu.wpi.first.wpilibj.RobotBase;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.simulation.DCMotorSim;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -36,16 +36,16 @@ import frc.robot.Constants.TurretConstants;
 import java.util.function.Supplier;
 
 public class Turret extends SubsystemBase {
-  private final double gearOneTeeth = TurretConstants.gearOneTeeth;
-  private final double gearTwoTeeth = TurretConstants.gearTwoTeeth;
+  private final double gearATeeth = TurretConstants.gearATeeth;
+  private final double gearBTeeth = TurretConstants.gearBTeeth;
   private final double turretTeeth = TurretConstants.turretTeeth;
 
-  private final double encoderARatio = 10 / gearOneTeeth;
-  private final double encoderBRatio = 10 / gearTwoTeeth;
+  private final double encoderARatio = 10 / gearATeeth;
+  private final double encoderBRatio = 10 / gearBTeeth;
 
-  private final double encoderGearing = encoderBRatio / encoderARatio;
+  private final double encoderGearing = encoderBRatio / encoderARatio; // 48/50
 
-  private final double turretReduction = (turretTeeth / 10) / (10 / gearOneTeeth);
+  private final double turretReduction = (turretTeeth / 10) / (10 / gearATeeth);
 
   private CANcoder encoderA;
   private CANcoder encoderB;
@@ -56,9 +56,10 @@ public class Turret extends SubsystemBase {
 
   private Angle desiredAngle = Degrees.of(0);
 
-  private final MotionMagicVoltage motionMagicRequest = new MotionMagicVoltage(0);
+  private final MotionMagicVoltage motionMagicRequest =
+      new MotionMagicVoltage(0).withEnableFOC(true);
 
-  private final DCMotorSim turretSim;
+  private DCMotorSim turretSim;
 
   public Turret() {
     encoderA = new CANcoder(TurretConstants.encoderAID);
@@ -74,6 +75,7 @@ public class Turret extends SubsystemBase {
                 .withMagnetSensor(
                     new MagnetSensorConfigs()
                         .withMagnetOffset(TurretConstants.encAMagnetOffset)
+                        .withAbsoluteSensorDiscontinuityPoint(1.0)
                         .withSensorDirection(SensorDirectionValue.CounterClockwise_Positive)));
 
     encoderB
@@ -83,16 +85,19 @@ public class Turret extends SubsystemBase {
                 .withMagnetSensor(
                     new MagnetSensorConfigs()
                         .withMagnetOffset(TurretConstants.encBMagnetOffset)
+                        .withAbsoluteSensorDiscontinuityPoint(1.0)
                         .withSensorDirection(SensorDirectionValue.CounterClockwise_Positive)));
 
-    turretMotor.setPosition(getAbsoluteTurretPosition().in(Rotations));
+    turretMotor.setPosition(getAbsoluteTurretPosition());
     turretPosition = turretMotor.getPosition();
 
-    turretSim =
-        new DCMotorSim(
-            LinearSystemId.createDCMotorSystem(
-                DCMotor.getKrakenX60(1), 0.196, TurretConstants.totalGearRatio),
-            DCMotor.getKrakenX60(1));
+    if (RobotBase.isSimulation()) {
+      turretSim =
+          new DCMotorSim(
+              LinearSystemId.createDCMotorSystem(
+                  DCMotor.getKrakenX60(1), 0.196, TurretConstants.totalGearRatio),
+              DCMotor.getKrakenX60(1));
+    }
   }
 
   public Command faceTarget(Supplier<Pose2d> targetSupplier, Supplier<Pose2d> robotPoseSupplier) {
@@ -129,25 +134,39 @@ public class Turret extends SubsystemBase {
   public Angle getAbsoluteTurretPosition() {
     double eA = encoderA.getAbsolutePosition().getValue().in(Rotations);
     double eB = encoderB.getAbsolutePosition().getValue().in(Rotations);
+    SmartDashboard.putNumber("Turret/Encoder A", eA);
+    SmartDashboard.putNumber("Turret/Encoder B", eB);
 
     double predictedB = eA * (encoderGearing);
+    SmartDashboard.putNumber("Turret/predictedB", predictedB);
 
     double diff = eB - predictedB;
+    SmartDashboard.putNumber("Turret/diff", diff);
 
     diff = MathUtil.inputModulus(diff, -0.5, 0.5);
 
-    long fullRotations = Math.round(diff / (encoderGearing - 1));
+    long aRotations = (-1) * Math.round(diff / (1 - encoderGearing));
+    SmartDashboard.putNumber("Turret/aRotations", aRotations);
 
-    double motorRotations = (eA / encoderARatio) + fullRotations;
+    double motorRotations = (eA / encoderARatio) + (aRotations / encoderARatio);
+    SmartDashboard.putNumber("Turret/motorRotations", motorRotations);
 
     double turretRotations = motorRotations / turretReduction;
 
-    return Degrees.of(turretRotations * 360);
+    return Rotations.of(-turretRotations);
   }
 
-  public void setTargetAngle(Angle desiredTurretAngle) {
+  public void moveToAngle(Angle desiredTurretAngle) {
     desiredAngle = optimizeAngle(desiredTurretAngle);
-    turretMotor.setControl(motionMagicRequest.withPosition(desiredAngle.in(Rotations)));
+    turretMotor.setControl(motionMagicRequest.withPosition(desiredAngle));
+  }
+
+  public Command moveToAngleCommand(Angle desiredTurretAngle) {
+    return run(() -> {
+          desiredAngle = optimizeAngle(desiredTurretAngle);
+          turretMotor.setControl(motionMagicRequest.withPosition(desiredAngle));
+        })
+        .withName("Turret To Position ");
   }
 
   private Angle optimizeAngle(Angle desiredAngle) {
@@ -173,6 +192,8 @@ public class Turret extends SubsystemBase {
             TurretConstants.MIN_ANGLE.in(Degrees),
             TurretConstants.MAX_ANGLE.in(Degrees));
 
+    // if (candidate > 85 && candidate < 95) candidate +=3;
+
     return Degrees.of(candidate);
   }
 
@@ -180,8 +201,13 @@ public class Turret extends SubsystemBase {
     turretMotor.stopMotor();
   }
 
-  public Command setZero() {
-    return runOnce(() -> turretMotor.setPosition(0)).withName("Set Turret Zero");
+  public void runTurret(double speed) {
+    turretMotor.set(speed);
+  }
+
+  public Command resetTurretPosition() {
+    return runOnce(() -> turretMotor.setPosition(getAbsoluteTurretPosition()))
+        .withName("Reset Turret Position");
   }
 
   public Command stop() {
@@ -189,7 +215,7 @@ public class Turret extends SubsystemBase {
   }
 
   public double getTurretVelocity() {
-    return turretMotor.getVelocity().getValue().in(RotationsPerSecond);
+    return turretMotor.getVelocity().getValue().in(DegreesPerSecond);
   }
 
   public boolean hasDriftedTooMuch(Angle tolerance) {
@@ -200,17 +226,23 @@ public class Turret extends SubsystemBase {
     return Math.abs(Units.radiansToDegrees(errorRad)) > tolerance.in(Degrees);
   }
 
-  @Logged(name = "Zeroed Poses Turret")
-  public Pose3d[] zeroedComponentPoses() {
-    return new Pose3d[] {new Pose3d(), new Pose3d()};
-  }
+  // @Logged(name = "Zeroed Poses Turret")
+  // public Pose3d[] zeroedComponentPoses() {
+  //   return new Pose3d[] {new Pose3d(), new Pose3d(), new Pose3d(), new Pose3d()};
+  // }
 
   @Override
   public void periodic() {
     turretPosition.refresh();
+
+    // turretMotor.setControl(motionMagicRequest.withPosition(desiredAngle));
+
     SmartDashboard.putNumber("Turret/TwoEncoder Angle", getAbsoluteTurretPosition().in(Degrees));
-    SmartDashboard.putNumber("Turret/Turret Angle", turretPosition.getValue().in(Degrees));
+    SmartDashboard.putNumber(
+        "Turret/Turret Angle", Units.rotationsToDegrees(turretPosition.getValueAsDouble()));
+
     SmartDashboard.putNumber("Turret/desired turret angle", desiredAngle.in(Degrees));
+
     SmartDashboard.putNumber(
         "Turret/Angle difference", desiredAngle.minus(turretPosition.getValue()).in(Degrees));
 
